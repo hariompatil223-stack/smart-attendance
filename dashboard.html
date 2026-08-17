@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance Dashboard</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --primary-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --present-color: #10b981;
+            --absent-color: #ef4444;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-main); padding: 20px; }
+
+        .container { max-width: 850px; margin: 0 auto; }
+
+        .header { text-align: center; margin-bottom: 25px; }
+        .header h1 { font-size: 1.8rem; background: var(--primary-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header p { color: var(--text-muted); font-size: 0.9rem; margin-top: 5px; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 25px; }
+        .stat-card { background: var(--card-bg); padding: 15px; border-radius: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.08); }
+        .stat-card .number { font-size: 1.8rem; font-weight: bold; margin-top: 5px; }
+        .stat-card.present .number { color: var(--present-color); }
+        .stat-card.absent .number { color: var(--absent-color); }
+
+        .controls { display: flex; gap: 10px; margin-bottom: 15px; }
+        .filter-btn { padding: 8px 16px; border: none; background: var(--card-bg); color: var(--text-muted); border-radius: 8px; font-weight: 600; cursor: pointer; border: 1px solid rgba(255,255,255,0.08); }
+        .filter-btn.active { background: var(--primary-gradient); color: #fff; border: none; }
+
+        .student-table { width: 100%; border-collapse: collapse; background: var(--card-bg); border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08); }
+        .student-table th, .student-table td { padding: 12px 16px; text-align: left; }
+        .student-table th { background: rgba(255,255,255,0.05); color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; }
+        .student-table tr { border-bottom: 1px solid rgba(255,255,255,0.05); }
+
+        .badge { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; display: inline-block; }
+        .badge.present { background: rgba(16, 185, 129, 0.15); color: var(--present-color); border: 1px solid var(--present-color); }
+        .badge.absent { background: rgba(239, 68, 68, 0.15); color: var(--absent-color); border: 1px solid var(--absent-color); }
+
+        .video-btn { background: #6366f1; color: white; border: none; padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; text-decoration: none; font-weight: 600; display: inline-block; }
+        .video-btn:hover { background: #4f46e5; }
+
+        .developer-badge { margin-top: 25px; text-align: center; font-size: 0.8rem; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h1>📋 Live Attendance Dashboard</h1>
+            <p>Verification with GPS Location & 3s Live Video Clips</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div style="font-size:0.8rem; color:var(--text-muted);">Total Students</div>
+                <div id="total-count" class="number">0</div>
+            </div>
+            <div class="stat-card present">
+                <div style="font-size:0.8rem; color:var(--text-muted);">Present Today</div>
+                <div id="present-count" class="number">0</div>
+            </div>
+            <div class="stat-card absent">
+                <div style="font-size:0.8rem; color:var(--text-muted);">Absent Today</div>
+                <div id="absent-count" class="number">0</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="filter-btn active" onclick="filterData('All', event)">All Students</button>
+            <button class="filter-btn" onclick="filterData('Present', event)">Present</button>
+            <button class="filter-btn" onclick="filterData('Absent', event)">Absent</button>
+        </div>
+
+        <table class="student-table">
+            <thead>
+                <tr>
+                    <th>Student ID</th>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Live Proof</th>
+                </tr>
+            </thead>
+            <tbody id="studentTableBody">
+                <tr><td colspan="4" style="text-align:center; color:var(--text-muted);">Loading students...</td></tr>
+            </tbody>
+        </table>
+
+        <div class="developer-badge">
+            Developed By <b>Hariom Patil</b>
+        </div>
+    </div>
+
+    <script>
+        let allStudentsData = [];
+
+        function loadDashboardData() {
+            fetch('/api/dashboard-data')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('total-count').innerText = data.total;
+                document.getElementById('present-count').innerText = data.present_count;
+                document.getElementById('absent-count').innerText = data.absent_count;
+
+                allStudentsData = data.students;
+                renderTable(allStudentsData);
+            })
+            .catch(err => console.error("Error loading dashboard:", err));
+        }
+
+        function renderTable(students) {
+            const tbody = document.getElementById('studentTableBody');
+            tbody.innerHTML = '';
+
+            if (!students || students.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted);">No records found.</td></tr>`;
+                return;
+            }
+
+            students.forEach(s => {
+                const isPresent = s.status === 'Present';
+                let proofHtml = `<span style="color:var(--text-muted); font-size:0.8rem;">No Proof</span>`;
+
+                if (isPresent && s.proof && s.proof.video) {
+                    proofHtml = `<a href="/proofs/${s.proof.video}" target="_blank" class="video-btn">🎥 View Video Proof</a>`;
+                }
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td style="font-weight:600;">${s.student_id}</td>
+                        <td>${s.name}</td>
+                        <td><span class="badge ${isPresent ? 'present' : 'absent'}">${s.status}</span></td>
+                        <td>${proofHtml}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        function filterData(status, e) {
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            if(e) e.target.classList.add('active');
+
+            if (status === 'All') {
+                renderTable(allStudentsData);
+            } else {
+                const filtered = allStudentsData.filter(s => s.status === status);
+                renderTable(filtered);
+            }
+        }
+
+        // Load data on start & refresh every 5s
+        loadDashboardData();
+        setInterval(loadDashboardData, 5000);
+    </script>
+</body>
+</html>

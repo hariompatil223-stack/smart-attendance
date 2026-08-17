@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Attendance App</title>
+    
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="mobile-web-app-capable" content="yes">
+
+    <script src="https://unpkg.com/html5-qrcode"></script>
+
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --primary-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --success-bg: #064e3b;
+            --success-border: #10b981;
+            --warning-bg: #78350f;
+            --warning-border: #f59e0b;
+            --error-bg: #7f1d1d;
+            --error-border: #ef4444;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px 15px;
+        }
+
+        .app-card {
+            width: 100%;
+            max-width: 440px;
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .header { text-align: center; margin-bottom: 20px; }
+        .header h1 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header p { color: var(--text-muted); font-size: 0.85rem; margin-top: 4px; }
+
+        #reader {
+            width: 100%;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 2px solid #334155;
+            background: #000;
+        }
+
+        #result {
+            margin-top: 20px;
+            padding: 16px;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-align: center;
+            background: #334155;
+            color: var(--text-main);
+            border: 1px solid #475569;
+            transition: all 0.3s ease;
+        }
+
+        #result.success { background: var(--success-bg); border-color: var(--success-border); color: #a7f3d0; }
+        #result.warning { background: var(--warning-bg); border-color: var(--warning-border); color: #fde68a; }
+        #result.error { background: var(--error-bg); border-color: var(--error-border); color: #fecaca; }
+
+        .developer-badge {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            text-align: center;
+        }
+        .developer-badge p { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; }
+        .developer-badge .dev-name {
+            display: inline-block;
+            margin-top: 4px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #f1f5f9;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 4px 12px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-card">
+        <div class="header">
+            <h1>⚡ Smart Attendance</h1>
+            <p>Scan QR code with GPS & Live Video Proof</p>
+        </div>
+
+        <div id="reader"></div>
+
+        <div id="result">📷 Initializing Camera & Video Recorder...</div>
+
+        <div class="developer-badge">
+            <p>Developed By</p>
+            <span class="dev-name">Hariom Patil</span>
+        </div>
+    </div>
+
+    <script>
+        let isProcessing = false;
+        let mediaRecorder;
+        let recordedChunks = [];
+
+        // Start video stream buffer for recording proof
+        navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        .then(stream => {
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+            mediaRecorder.start(500); // Record 0.5s chunks continuously
+        })
+        .catch(err => console.log("Camera recording warning:", err));
+
+        function captureLiveVideoProof() {
+            return new Promise((resolve) => {
+                if (recordedChunks.length === 0) {
+                    resolve(null);
+                    return;
+                }
+                // Extract last ~3 seconds of recorded video chunks
+                const blob = new Blob(recordedChunks.slice(-6), { type: 'video/webm' });
+                const reader = new FileReader();
+                reader.readAsDataURL(blob);
+                reader.onloadend = () => resolve(reader.result);
+            });
+        }
+
+        async function onScanSuccess(decodedText) {
+            if (isProcessing) return;
+            isProcessing = true;
+
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = '';
+            resultDiv.innerText = "🎥 Capturing 3s video & GPS location...";
+
+            // Grab recent video snapshot
+            const videoBase64 = await captureLiveVideoProof();
+
+            if (!navigator.geolocation) {
+                resultDiv.innerText = "❌ GPS is not supported on this device.";
+                resultDiv.className = 'error';
+                setTimeout(() => { isProcessing = false; }, 3000);
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+
+                    fetch('/api/mark-attendance', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            qr_token: decodedText,
+                            latitude: lat,
+                            longitude: lon,
+                            video: videoBase64
+                        })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        resultDiv.innerText = data.message;
+                        
+                        if (data.status === 'success') {
+                            resultDiv.className = 'success';
+                        } else if (data.status === 'warning') {
+                            resultDiv.className = 'warning';
+                        } else {
+                            resultDiv.className = 'error';
+                        }
+
+                        setTimeout(() => { isProcessing = false; }, 3000);
+                    })
+                    .catch(() => {
+                        resultDiv.innerText = "❌ Error connecting to server!";
+                        resultDiv.className = 'error';
+                        setTimeout(() => { isProcessing = false; }, 3000);
+                    });
+                },
+                (error) => {
+                    resultDiv.innerText = "❌ Location permission denied! Turn on GPS.";
+                    resultDiv.className = 'error';
+                    setTimeout(() => { isProcessing = false; }, 3000);
+                },
+                { enableHighAccuracy: true, timeout: 6000 }
+            );
+        }
+
+        let html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
+            fps: 15, 
+            qrbox: { width: 220, height: 220 } 
+        });
+        
+        html5QrcodeScanner.render(onScanSuccess);
+    </script>
+</body>
+</html>
